@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tạo File PPTX & Excel Tự Động Bằng AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Thư viện tạo PowerPoint phía client -->
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <!-- Thư viện tạo Excel phía client -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
+  <div class="max-w-2xl w-full bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-5">
+    <div>
+      <h1 class="text-2xl font-bold text-white">AI Document Generator</h1>
+      <p class="text-slate-400 text-sm">Nhập yêu cầu để tạo file PowerPoint hoặc Excel tự động</p>
+    </div>
+
+    <!-- API Key Input -->
+    <div>
+      <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Gemini API Key</label>
+      <input type="password" id="apiKey" placeholder="Dán khóa Gemini API vào đây..."
+             class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+      <span class="text-xs text-slate-500">Khóa sẽ được lưu cục bộ trên trình duyệt (LocalStorage).</span>
+    </div>
+
+    <!-- Định dạng xuất file -->
+    <div>
+      <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Định dạng file cần tạo</label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="flex items-center gap-2 p-3 bg-slate-950 border border-slate-700 rounded-lg cursor-pointer hover:border-indigo-500 transition">
+          <input type="radio" name="format" value="pptx" checked class="accent-indigo-500" />
+          <span class="text-sm font-medium">PowerPoint (.pptx)</span>
+        </label>
+        <label class="flex items-center gap-2 p-3 bg-slate-950 border border-slate-700 rounded-lg cursor-pointer hover:border-indigo-500 transition">
+          <input type="radio" name="format" value="xlsx" class="accent-indigo-500" />
+          <span class="text-sm font-medium">Excel (.xlsx)</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Nhập yêu cầu -->
+    <div>
+      <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Mô tả nội dung bạn mong muốn</label>
+      <textarea id="prompt" rows="4" placeholder="Ví dụ: Tạo bài thuyết trình 4 slide giới thiệu chiến dịch ra mắt cà phê mới; hoặc Bảng tính theo dõi thu chi tháng 10 gồm 5 danh mục..."
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
+    </div>
+
+    <!-- Nút hành động & Trạng thái -->
+    <button id="generateBtn" onclick="handleGenerate()"
+            class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 rounded-lg transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30">
+      <span>Bắt đầu tạo file</span>
+    </button>
+    <div id="status" class="hidden text-sm text-center py-2 px-3 rounded-lg"></div>
+  </div>
+
+  <script>
+    const apiKeyInput = document.getElementById('apiKey');
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) apiKeyInput.value = savedKey;
+
+    apiKeyInput.addEventListener('input', (e) => {
+      localStorage.setItem('gemini_api_key', e.target.value.trim());
+    });
+
+    function setStatus(message, isError = false) {
+      const status = document.getElementById('status');
+      status.classList.remove('hidden', 'bg-red-900/50', 'text-red-300', 'bg-emerald-900/50', 'text-emerald-300', 'bg-slate-700', 'text-slate-200');
+      if (isError) {
+        status.classList.add('bg-red-900/50', 'text-red-300');
+      } else {
+        status.classList.add('bg-indigo-900/50', 'text-indigo-200');
+      }
+      status.innerText = message;
+    }
+
+    async function callGemini(apiKey, systemInstruction, userPrompt) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const payload = {
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        generationConfig: { responseMimeType: 'application/json' }
+      };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || 'Lỗi kết nối API');
+      }
+
+      const data = await res.json();
+      return JSON.parse(data.candidates[0].content.parts[0].text);
+    }
+
+    function generatePPTX(slidesData) {
+      const pres = new PptxGenJS();
+      pres.layout = 'LAYOUT_16x9';
+
+      slidesData.forEach((s) => {
+        const slide = pres.addSlide();
+        slide.background = { color: '0F172A' };
+
+        // Tiêu đề Slide
+        slide.addText(s.title || 'Slide Title', {
+          x: 0.8,
+          y: 0.6,
+          w: '80%',
+          h: 0.8,
+          fontSize: 26,
+          bold: true,
+          color: '38BDF8',
+          fontFace: 'Arial'
+        });
+
+        // Nội dung Bullet points
+        if (Array.isArray(s.bullets)) {
+          const formattedPoints = s.bullets.map(b => ({
+            text: b,
+            options: { fontSize: 16, color: 'E2E8F0', bullet: true, breakLine: true }
+          }));
+          slide.addText(formattedPoints, {
+            x: 0.8,
+            y: 1.6,
+            w: 8.5,
+            h: 4.5,
+            lineSpacing: 28,
+            fontFace: 'Arial'
+          });
+        }
+      });
+
+      pres.writeFile({ fileName: `Slide_${Date.now()}.pptx` });
+    }
+
+    function generateExcel(excelData) {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(excelData.rows || []);
+      XLSX.utils.book_append_sheet(wb, ws, excelData.sheetName || 'Sheet1');
+      XLSX.writeFile(wb, `BangTinh_${Date.now()}.xlsx`);
+    }
+
+    async function handleGenerate() {
+      const apiKey = apiKeyInput.value.trim();
+      const prompt = document.getElementById('prompt').value.trim();
+      const format = document.querySelector('input[name="format"]:checked').value;
+      const btn = document.getElementById('generateBtn');
+
+      if (!apiKey) return alert('Vui lòng nhập Gemini API Key');
+      if (!prompt) return alert('Vui lòng nhập nội dung mong muốn');
+
+      btn.disabled = true;
+      btn.classList.add('opacity-50');
+      setStatus('AI đang phân tích và chuẩn bị dữ liệu cấu trúc...');
+
+      try {
+        if (format === 'pptx') {
+          const systemInstruction = `Bạn là trợ lý soạn thảo bài thuyết trình. Hãy xuất ra mảng JSON các slide theo định dạng sau:
+[
+  {
+    "title": "Tên slide",
+    "bullets": ["Ý chính 1", "Ý chính 2", "Ý chính 3"]
+  }
+]
+Không trả về văn bản markdown bên ngoài JSON.`;
+          const data = await callGemini(apiKey, systemInstruction, prompt);
+          setStatus('Đang tạo và tải xuống file PowerPoint...');
+          generatePPTX(data);
+        } else {
+          const systemInstruction = `Bạn là chuyên gia bảng tính Excel. Hãy xuất ra định dạng JSON sau:
+{
+  "sheetName": "Tên sheet ngắn gọn",
+  "rows": [
+    ["Tiêu đề cột 1", "Tiêu đề cột 2", "Tiêu đề cột 3"],
+    ["Dữ liệu A1", "Dữ liệu A2", 100],
+    ["Dữ liệu B1", "Dữ liệu B2", 200]
+  ]
+}
+Chỉ trả về JSON thuần, đảm bảo hàng đầu tiên là header.`;
+          const data = await callGemini(apiKey, systemInstruction, prompt);
+          setStatus('Đang tạo và tải xuống file Excel...');
+          generateExcel(data);
+        }
+        setStatus('Tạo file thành công! File đã được tải xuống.');
+      } catch (err) {
+        setStatus(`Lỗi: ${err.message}`, true);
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50');
+      }
+    }
+  </script>
+</body>
+</html>
